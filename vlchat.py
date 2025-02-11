@@ -1,10 +1,12 @@
 import torch
+import base64
+from io import BytesIO
 import torchvision.transforms as T
 from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModel, AutoTokenizer
 
-model_path = '../../LLMs/lm_model/InternVL2_5-1B'
+from settings import model_path
 
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -76,13 +78,22 @@ def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbna
     return processed_images
 
 
-def load_image(image_file, input_size=448, max_num=12):
-    image = Image.open(image_file).convert('RGB')
+def load_image(image, input_size=448, max_num=12):
+    #image = Image.open(image_file).convert('RGB')
     transform = build_transform(input_size=input_size)
     images = dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
     pixel_values = [transform(image) for image in images]
     pixel_values = torch.stack(pixel_values)
     return pixel_values
+
+
+# 将 base64 编码的图片转为 PIL.Image
+def load_image_b64(b64_data):
+    data = base64.b64decode(b64_data) # Bytes
+    tmp_buff = BytesIO(data)
+    img = Image.open(tmp_buff).convert('RGB')
+    tmp_buff.close()
+    return img
 
 
 class VLChat():
@@ -99,9 +110,9 @@ class VLChat():
         self.tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, use_fast=False)
         self.generation_config = dict(max_new_tokens=1024, do_sample=True)
 
-    def chat_w_image(self, question, image_path, max_num=12):
+    def chat_w_image(self, question, image, max_num=12):
         # set the max number of tiles in `max_num`
-        pixel_values = load_image(image_path, max_num=max_num).to(torch.bfloat16).cuda()
+        pixel_values = load_image(image, max_num=max_num).to(torch.bfloat16).cuda()
         # single-image single-round conversation (单图单轮对话)
         _question = f"<image>\n{question}"
         response = self.model.chat(self.tokenizer, pixel_values, _question, self.generation_config)
@@ -119,6 +130,8 @@ if __name__ == '__main__':
 
     image_path = sys.argv[1]
 
+    image = Image.open(image_path).convert('RGB')
+
     vlchat = VLChat(model_path)
 
     while True:
@@ -126,6 +139,6 @@ if __name__ == '__main__':
         if len(question.strip())==0:
             sys.exit(0)
 
-        print("\n回答：\n", vlchat.chat_w_image(question, image_path))
+        print("\n回答：\n", vlchat.chat_w_image(question, image))
 
     # OCR获取图片中的文字，只返回OCR的结果
