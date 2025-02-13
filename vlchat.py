@@ -1,12 +1,41 @@
-import torch
+import math
 import base64
 from io import BytesIO
+import torch
 import torchvision.transforms as T
 from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModel, AutoTokenizer
 
 from settings import model_path
+
+
+def split_model(model_name, gpu_num, main_gpu=0):
+    device_map = {}
+    world_size = gpu_num #torch.cuda.device_count()
+    num_layers = {
+        'InternVL2_5-1B': 24, 'InternVL2_5-2B': 24, 'InternVL2_5-4B': 36, 'InternVL2_5-8B': 32,
+        'InternVL2_5-26B': 48, 'InternVL2_5-38B': 64, 'InternVL2_5-78B': 80}[model_name]
+    # Since the first GPU will be used for ViT, treat it as half a GPU.
+    num_layers_per_gpu = math.ceil(num_layers / (world_size - 0.5))
+    num_layers_per_gpu = [num_layers_per_gpu] * world_size
+    num_layers_per_gpu[0] = math.ceil(num_layers_per_gpu[0] * 0.5)
+    layer_cnt = 0
+    for i, num_layer in enumerate(num_layers_per_gpu):
+        for j in range(num_layer):
+            device_map[f'language_model.model.layers.{layer_cnt}'] = i
+            layer_cnt += 1
+    device_map['vision_model'] = main_gpu
+    device_map['mlp1'] = main_gpu
+    device_map['language_model.model.tok_embeddings'] = main_gpu
+    device_map['language_model.model.embed_tokens'] = main_gpu
+    device_map['language_model.output'] = main_gpu
+    device_map['language_model.model.norm'] = main_gpu
+    device_map['language_model.model.rotary_emb'] = main_gpu
+    device_map['language_model.lm_head'] = main_gpu
+    device_map[f'language_model.model.layers.{num_layers - 1}'] = main_gpu
+
+    return device_map
 
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -97,16 +126,29 @@ def load_image_b64(b64_data):
 
 
 class VLChat():
-    def __init__(self, path, device="cuda:0"):
-        # If you want to load a model using multiple GPUs, please refer to the `Multiple GPUs` section.
-        self.model = AutoModel.from_pretrained(
-            path,
-            torch_dtype=torch.bfloat16,
-            device_map=device,
-            #load_in_8bit=True,
-            low_cpu_mem_usage=True,
-            use_flash_attn=True,
-            trust_remote_code=True).eval().cuda()
+    def __init__(self, path, gpu_num=1, main_gpu=0):
+        if gpu_num > 1:
+            print('Multi GPUs ...', gpu_num, main_gpu)
+            # load a model using multiple GPUs
+            device_map = split_model('InternVL2_5-1B', gpu_num, main_gpu)
+            self.model = AutoModel.from_pretrained(
+                path,
+                torch_dtype=torch.bfloat16,
+                device_map=device_map,
+                #load_in_8bit=True,
+                low_cpu_mem_usage=True,
+                use_flash_attn=True,
+                trust_remote_code=True).eval() #.cuda()
+        else:
+            print('Single GPU ...')
+            self.model = AutoModel.from_pretrained(
+                path,
+                torch_dtype=torch.bfloat16,
+                #load_in_8bit=True,
+                #load_in_4bit=True,
+                low_cpu_mem_usage=True,
+                use_flash_attn=True,
+                trust_remote_code=True).eval().cuda()
         self.tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, use_fast=False)
         self.generation_config = dict(max_new_tokens=1024, do_sample=True)
 

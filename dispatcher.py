@@ -74,16 +74,17 @@ def process_thread(msg_body):
 
 
 if __name__ == '__main__':
-    if len(sys.argv)<3:
-        print("usage: dispatcher.py <QUEUE_NO.> <gpu>")
+    if len(sys.argv)<4:
+        print("usage: dispatcher.py <QUEUE_NO.> <gpu_num> <main_gpu>")
         sys.exit(2)
 
     queue_no = sys.argv[1]
-    gpu = sys.argv[2]
+    gpu_num = int(sys.argv[2])
+    main_gpu = int(sys.argv[3])
 
     print('Request queue NO. ', queue_no)
 
-    vlchat_model = vlchat.VLChat(model_path, device=f"cuda:{gpu}")
+    vlchat_model = vlchat.VLChat(model_path, gpu_num, main_gpu)
 
     sys.stdout.flush()
 
