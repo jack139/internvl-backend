@@ -2,7 +2,7 @@
 model_path = '../../LLMs/lm_model/InternVL2_5-1B'
 
 # dispatcher 中 最大线程数
-MAX_DISPATCHER_WORKERS = 8
+MAX_DISPATCHER_WORKERS = 1
 
 ############# 消息中间件设置
 
