@@ -15,7 +15,7 @@ python3.9 vlchat.py "<image-path>"
 使用 [go-infer](https://github.com/jack139/go-infer)
 
 ```bash
-python3.9 dispatcher.py 0 0
+python3.9 dispatcher.py 0 0 0
 ```
 
 
